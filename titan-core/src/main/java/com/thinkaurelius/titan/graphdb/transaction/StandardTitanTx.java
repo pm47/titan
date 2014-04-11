@@ -330,7 +330,7 @@ public class StandardTitanTx extends TitanBlueprintsTransaction {
     public TitanVertex addVertex(Long vertexId) {
         verifyWriteAccess();
         if (vertexId != null && !graph.getConfiguration().allowVertexIdSetting()) {
-            log.info("Provided vertex id [{}] is ignored because vertex id setting is not enabled", vertexId);
+            log.info("Provided vertex id [{}] is ignored because vertex id setting is not enabled (assign immediately: {})", vertexId, config.hasAssignIDsImmediately());
             vertexId = null;
         }
         Preconditions.checkArgument(vertexId != null || !graph.getConfiguration().allowVertexIdSetting(), "Must provide vertex id");
