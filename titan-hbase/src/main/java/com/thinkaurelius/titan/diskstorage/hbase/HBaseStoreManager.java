@@ -12,13 +12,11 @@ import com.thinkaurelius.titan.diskstorage.StorageException;
 import com.thinkaurelius.titan.diskstorage.TemporaryStorageException;
 import com.thinkaurelius.titan.diskstorage.common.DistributedStoreManager;
 import com.thinkaurelius.titan.diskstorage.keycolumnvalue.*;
+import com.thinkaurelius.titan.diskstorage.util.*;
 import com.thinkaurelius.titan.graphdb.configuration.GraphDatabaseConfiguration;
 import com.thinkaurelius.titan.util.system.IOUtils;
 
-import org.apache.hadoop.hbase.HBaseConfiguration;
-import org.apache.hadoop.hbase.HColumnDescriptor;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.TableNotFoundException;
+import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.io.hfile.Compression;
 import org.apache.hadoop.hbase.util.Pair;
@@ -26,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -49,6 +48,28 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
     public static final String TABLE_NAME_KEY = "tablename";
     public static final String TABLE_NAME_DEFAULT = "titan";
 
+    /**
+     * Related bug fixed in 0.98.0, 0.94.7, 0.95.0:
+     * <p/>
+     * https://issues.apache.org/jira/browse/HBASE-8170
+     */
+    public static final int MIN_REGION_COUNT = 3;
+
+    private static final byte[] START_KEY;
+    private static final byte[] END_KEY;
+
+    static {
+        // 4 bytes = 32 bits > 30 bit partition width
+        START_KEY = new byte[4];
+        END_KEY = new byte[4];
+
+        for (int i = 0; i < START_KEY.length; i++)
+            START_KEY[i] = (byte) 0;
+
+        for (int i = 0; i < END_KEY.length; i++)
+            END_KEY[i] = (byte) -1;
+    }
+
 
     public static final String SHORT_CF_NAMES_KEY = "short-cf-names";
     public static final boolean SHORT_CF_NAMES_DEFAULT = false;
@@ -70,8 +91,8 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
     }
 
 
-
     private final String tableName;
+    private final int regionCount;
     private final org.apache.hadoop.conf.Configuration hconf;
 
     private final ConcurrentMap<String, HBaseKeyColumnValueStore> openStores;
@@ -109,6 +130,9 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
         this.config = config;
 
         this.tableName = config.getString(TABLE_NAME_KEY, TABLE_NAME_DEFAULT);
+
+        this.regionCount = Math.min(config.getInt("region-count"), MIN_REGION_COUNT);
+        logger.warn("using region-count=" + regionCount);
 
         this.hconf = HBaseConfiguration.create();
         for (Map.Entry<String, String> confEntry : HBASE_CONFIGURATION.entrySet()) {
@@ -219,12 +243,12 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
 
             final String cfName = shortCfNames ? shortenCfName(longName) : longName;
 
-            HBaseKeyColumnValueStore newStore = new HBaseKeyColumnValueStore(this,connectionPool, tableName, cfName, longName);
+            HBaseKeyColumnValueStore newStore = new HBaseKeyColumnValueStore(this, connectionPool, tableName, cfName, longName);
 
             store = openStores.putIfAbsent(longName, newStore); // nothing bad happens if we loose to other thread
 
-            if (store == null ) {
-                if( !this.config.getBoolean(SKIP_SCHEMA_CHECK,SKIP_SCHEMA_CHECK_DEFAULT))
+            if (store == null) {
+                if (!this.config.getBoolean(SKIP_SCHEMA_CHECK, SKIP_SCHEMA_CHECK_DEFAULT))
                     ensureColumnFamilyExists(tableName, cfName);
 
                 store = newStore;
@@ -261,14 +285,51 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
             if (adm.tableExists(tableName)) {
                 desc = adm.getTableDescriptor(tableName.getBytes());
             } else {
-                desc = new HTableDescriptor(tableName);
-                adm.createTable(desc);
+                desc = createTable(tableName, adm);
             }
         } catch (IOException e) {
             throw new TemporaryStorageException(e);
         }
 
         return desc;
+    }
+
+    private HTableDescriptor createTable(String name, HBaseAdmin adm) throws IOException {
+        HTableDescriptor desc = new HTableDescriptor(tableName);
+
+        int count; // regions to create
+        String src;
+
+        if (MIN_REGION_COUNT <= (count = regionCount)) {
+            src = "configuration";
+        } else if (MIN_REGION_COUNT <= (count = getServerCount(adm))) {
+            src = "cluster status";
+        } else {
+            count = -1;
+            src = "default";
+        }
+
+        if (MIN_REGION_COUNT < count) {
+            adm.createTable(desc, getStartKey(count), getEndKey(count), count);
+            logger.debug("Created table {} with region count {} from {}", tableName, count, src);
+        } else {
+            adm.createTable(desc);
+            logger.debug("Created table {} with default start key, end key, and region count", tableName);
+        }
+
+        return desc;
+    }
+
+    private byte[] getStartKey(int regionCount) {
+        ByteBuffer regionWidth = ByteBuffer.allocate(4);
+        regionWidth.putInt((int) (((1L << 32) - 1L) / regionCount)).flip();
+        return StaticArrayBuffer.of(regionWidth).getBytes(0, 4);
+    }
+
+    private byte[] getEndKey(int regionCount) {
+        ByteBuffer regionWidth = ByteBuffer.allocate(4);
+        regionWidth.putInt((int) (((1L << 32) - 1L) / regionCount * (regionCount - 1))).flip();
+        return StaticArrayBuffer.of(regionWidth).getBytes(0, 4);
     }
 
     private void ensureColumnFamilyExists(String tableName, String columnFamily) throws StorageException {
@@ -314,6 +375,17 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
                     throw new TemporaryStorageException(e);
                 }
             }
+        }
+    }
+
+    private Integer getServerCount(HBaseAdmin adm) {
+        ClusterStatus cs;
+        try {
+            cs = adm.getClusterStatus();
+            return cs.getServers().size();
+        } catch (IOException e) {
+            logger.debug("Unable to retrieve HBase cluster status", e);
+            return null;
         }
     }
 
