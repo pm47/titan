@@ -39,13 +39,17 @@ public class StaticArrayBuffer implements StaticBuffer {
         this(array, 0, array.length);
     }
 
+    public StaticArrayBuffer(StaticArrayBuffer buffer) {
+        this(buffer.array, buffer.offset, buffer.limit);
+    }
+
     public static StaticArrayBuffer of(byte[] array) {
         return new StaticArrayBuffer(array);
     }
 
     public static StaticArrayBuffer of(ByteBuffer b) {
         if (b.hasArray()) {
-            return new StaticArrayBuffer(b.array(),b.arrayOffset()+b.position(),b.arrayOffset()+b.limit());
+            return new StaticArrayBuffer(b.array(), b.arrayOffset() + b.position(), b.arrayOffset() + b.limit());
         } else {
             byte[] array = new byte[b.remaining()];
             b.mark();
@@ -66,10 +70,11 @@ public class StaticArrayBuffer implements StaticBuffer {
     }
 
     public static final int BYTE_LEN = 1;
+
     public byte[] getBytes(int position, int length) {
         byte[] result = new byte[length];
         for (int i = 0; i < length; i++) {
-            result[i]=getByte(position);
+            result[i] = getByte(position);
             position += BYTE_LEN;
         }
         return result;
