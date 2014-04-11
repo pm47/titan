@@ -131,7 +131,7 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
 
         this.tableName = config.getString(TABLE_NAME_KEY, TABLE_NAME_DEFAULT);
 
-        this.regionCount = Math.min(config.getInt("region-count"), MIN_REGION_COUNT);
+        this.regionCount = Math.max(config.getInt("region-count"), MIN_REGION_COUNT);
         logger.warn("using region-count=" + regionCount);
 
         this.hconf = HBaseConfiguration.create();
