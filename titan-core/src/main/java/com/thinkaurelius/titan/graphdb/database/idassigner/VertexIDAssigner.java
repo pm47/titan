@@ -65,6 +65,7 @@ public class VertexIDAssigner {
 
         long partitionBits;
         boolean partitionIDs = config.getBoolean(IDS_PARTITION_KEY, IDS_PARTITION_DEFAULT);
+        log.info("partitionIds=" + partitionIDs);
         if (partitionIDs) {
             //Use a placement strategy that balances partitions
             partitionBits = DEFAULT_PARTITION_BITS;
@@ -78,16 +79,17 @@ public class VertexIDAssigner {
             hasLocalPartitions = false;
             placementStrategy = new DefaultPlacementStrategy(0);
         }
-        log.debug("Partition IDs? [{}], Local Partitions? [{}]",partitionIDs,hasLocalPartitions);
+        log.info("Partition IDs? [{}], Local Partitions? [{}]", partitionIDs, hasLocalPartitions);
         idManager = new IDManager(partitionBits);
         Preconditions.checkArgument(idManager.getMaxPartitionCount() < Integer.MAX_VALUE);
         this.maxPartitionID = (int) idManager.getMaxPartitionCount();
-
+        log.info("maxPartitionID=" + maxPartitionID);
         long baseBlockSize = config.getLong(IDS_BLOCK_SIZE_KEY, IDS_BLOCK_SIZE_DEFAULT);
+        log.info("baseBlockSize=" + baseBlockSize);
         idAuthority.setIDBlockSizer(new SimpleVertexIDBlockSizer(baseBlockSize));
 
-        renewTimeoutMS = config.getLong(IDS_RENEW_TIMEOUT_KEY,IDS_RENEW_TIMEOUT_DEFAULT);
-        renewBufferPercentage = config.getDouble(IDS_RENEW_BUFFER_PERCENTAGE_KEY,IDS_RENEW_BUFFER_PERCENTAGE_DEFAULT);
+        renewTimeoutMS = config.getLong(IDS_RENEW_TIMEOUT_KEY, IDS_RENEW_TIMEOUT_DEFAULT);
+        renewBufferPercentage = config.getDouble(IDS_RENEW_BUFFER_PERCENTAGE_KEY, IDS_RENEW_BUFFER_PERCENTAGE_DEFAULT);
 
         idPools = new OpenIntObjectHashMap();
         idPoolsLock = new ReentrantReadWriteLock();
@@ -142,6 +144,7 @@ public class VertexIDAssigner {
     }
 
     public void assignID(InternalElement vertex) {
+        log.info("assigning id to a single vertex");
         for (int attempt = 0; attempt < MAX_PARTITION_RENEW_ATTEMPTS; attempt++) {
             long partitionID = -1;
             if (vertex instanceof InternalRelation) {
@@ -161,6 +164,7 @@ public class VertexIDAssigner {
     }
 
     public void assignIDs(Iterable<InternalRelation> addedRelations) {
+        log.info("assigning id to a set of relations");
         if (!placementStrategy.supportsBulkPlacement()) {
             for (InternalRelation relation : addedRelations) {
                 for (int i = 0; i < relation.getArity(); i++) {
@@ -232,6 +236,7 @@ public class VertexIDAssigner {
     }
 
     private void assignID(final InternalElement vertex, final long partitionIDl) {
+
         Preconditions.checkNotNull(vertex);
         Preconditions.checkArgument(!vertex.hasId());
         Preconditions.checkArgument(partitionIDl >= 0 && partitionIDl <= maxPartitionID, partitionIDl);
@@ -268,12 +273,13 @@ public class VertexIDAssigner {
                 if (vertex instanceof InternalRelation) {
                     id = idManager.getRelationID(pool.relation.nextID(), partitionID);
                 } else if (vertex instanceof TitanKey) {
-                    id = idManager.getPropertyKeyID(pool.relationType.nextID()+SystemTypeManager.SYSTEM_TYPE_OFFSET);
+                    id = idManager.getPropertyKeyID(pool.relationType.nextID() + SystemTypeManager.SYSTEM_TYPE_OFFSET);
                 } else if (vertex instanceof TitanLabel) {
-                    id = idManager.getEdgeLabelID(pool.relationType.nextID()+SystemTypeManager.SYSTEM_TYPE_OFFSET);
+                    id = idManager.getEdgeLabelID(pool.relationType.nextID() + SystemTypeManager.SYSTEM_TYPE_OFFSET);
                 } else {
                     id = idManager.getVertexID(pool.vertex.nextID(), partitionID);
                 }
+                log.info("assigning id " + id + " from partition " + partitionIDl + " to vertex");
                 pool.accessed();
             } catch (IDPoolExhaustedException e) {
                 log.debug("Pool exhausted for partition id {}", partitionID);
@@ -323,11 +329,11 @@ public class VertexIDAssigner {
         public long getIdUpperBound(int fullPartitionID) {
             switch (PoolType.getPoolType(fullPartitionID)) {
                 case VERTEX:
-                    return idManager.getMaxVertexCount()+1;
+                    return idManager.getMaxVertexCount() + 1;
                 case RELATION:
-                    return idManager.getMaxRelationCount()+1;
+                    return idManager.getMaxRelationCount() + 1;
                 case RELATIONTYPE:
-                    return idManager.getMaxTitanTypeCount()+1;
+                    return idManager.getMaxTitanTypeCount() + 1;
                 default:
                     throw new IllegalArgumentException("Unrecognized pool type");
             }
