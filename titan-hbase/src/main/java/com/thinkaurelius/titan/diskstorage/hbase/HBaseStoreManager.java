@@ -176,6 +176,30 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
         features.isKeyOrdered = false;
         features.isDistributed = true;
         features.hasLocalKeyPartition = false;
+
+
+	HTable table = null;
+        try {
+            table = new HTable(hconf, tableName);
+
+            for (Map.Entry<HRegionInfo, ServerName> e : table.getRegionLocations().entrySet()) {
+                logger.debug("partition: {} / {}", e.getKey(), e.getValue());
+            }
+        } catch (MasterNotRunningException e) {
+            logger.warn("Unexpected MasterNotRunningException", e);
+        } catch (ZooKeeperConnectionException e) {
+            logger.warn("Unexpected ZooKeeperConnectionException", e);
+        } catch (IOException e) {
+            logger.warn("Unexpected IOException", e);
+        } finally {
+            if (null != table) {
+                try {
+                    table.close();
+                } catch (IOException e) {
+                    logger.warn("Failed to close HTable {}", table, e);
+                }
+            }
+        }
     }
 
 
