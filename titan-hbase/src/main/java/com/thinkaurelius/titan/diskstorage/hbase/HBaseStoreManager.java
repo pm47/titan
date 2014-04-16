@@ -16,10 +16,13 @@ import com.thinkaurelius.titan.diskstorage.util.*;
 import com.thinkaurelius.titan.graphdb.configuration.GraphDatabaseConfiguration;
 import com.thinkaurelius.titan.util.system.IOUtils;
 
+import org.apache.commons.codec.DecoderException;
+import org.apache.commons.codec.binary.Hex;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.io.hfile.Compression;
 import org.apache.hadoop.hbase.util.Pair;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -92,6 +95,7 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
 
 
     private final String tableName;
+    private final String[] manualRegions;
     private final int regionCount;
     private final org.apache.hadoop.conf.Configuration hconf;
 
@@ -131,8 +135,9 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
 
         this.tableName = config.getString(TABLE_NAME_KEY, TABLE_NAME_DEFAULT);
 
+	this.manualRegions = config.getStringArray("manual-regions");
+
         this.regionCount = Math.max(config.getInt("region-count"), MIN_REGION_COUNT);
-        logger.warn("using region-count=" + regionCount);
 
         this.hconf = HBaseConfiguration.create();
         for (Map.Entry<String, String> confEntry : HBASE_CONFIGURATION.entrySet()) {
@@ -324,7 +329,10 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
         int count; // regions to create
         String src;
 
-        if (MIN_REGION_COUNT <= (count = regionCount)) {
+        if (manualRegions != null) {
+            count = -1;
+            src = "manual regions";
+        } else if (MIN_REGION_COUNT <= (count = regionCount)) {
             src = "configuration";
         } else if (MIN_REGION_COUNT <= (count = getServerCount(adm))) {
             src = "cluster status";
@@ -333,7 +341,22 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
             src = "default";
         }
 
-        if (MIN_REGION_COUNT < count) {
+       if (manualRegions != null){
+            logger.warn("hard coding regions!");
+            try {
+                byte[][] splitKeys = new byte[manualRegions.length][];
+                for (int i = 0; i < manualRegions.length; i++) {
+                    splitKeys[i] = Hex.decodeHex(manualRegions[i].toCharArray());
+                };
+                for (int i = 0; i < splitKeys.length; i++) {
+                    logger.warn("" + org.apache.commons.codec.binary.Hex.encodeHex(splitKeys[i]));
+                }
+                adm.createTable(desc, splitKeys);
+            } catch (DecoderException e) {
+                throw new IOException(e);
+            } 
+        } else if (MIN_REGION_COUNT < count) {
+            logger.warn("using region count=" + count);
             adm.createTable(desc, getStartKey(count), getEndKey(count), count);
             logger.debug("Created table {} with region count {} from {}", tableName, count, src);
         } else {
