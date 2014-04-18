@@ -329,7 +329,7 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
         int count; // regions to create
         String src;
 
-        if (manualRegions != null) {
+        if (manualRegions.length > 0) {
             count = -1;
             src = "manual regions";
         } else if (MIN_REGION_COUNT <= (count = regionCount)) {
@@ -341,7 +341,7 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
             src = "default";
         }
 
-       if (manualRegions != null){
+       if (manualRegions.length > 0){
             logger.warn("hard coding regions!");
             try {
                 byte[][] splitKeys = new byte[manualRegions.length][];
