@@ -2,6 +2,8 @@ package com.thinkaurelius.titan.graphdb.idmanagement;
 
 
 import com.google.common.base.Preconditions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Handles the allocation of ids based on the type of element
@@ -10,6 +12,8 @@ import com.google.common.base.Preconditions;
  * @author Matthias Broecheler (me@matthiasb.com)
  */
 public class IDManager {
+
+    private static final Logger logger = LoggerFactory.getLogger(IDManager.class);
 
     //public static final long MaxEntityID = Long.MAX_VALUE>>2;
     public enum IDType {
@@ -75,6 +79,7 @@ public class IDManager {
         public abstract long id();
 
         public final long addPadding(long id) {
+            logger.debug("adding padding for id {} of type {} with offset", id, this, offset());
             return (id << offset()) | id();
         }
 
