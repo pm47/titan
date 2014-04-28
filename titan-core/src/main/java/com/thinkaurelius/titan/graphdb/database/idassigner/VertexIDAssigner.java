@@ -145,7 +145,6 @@ public class VertexIDAssigner {
     }
 
     public void assignID(InternalElement vertex) {
-        log.info("assigning id to a single vertex");
         for (int attempt = 0; attempt < MAX_PARTITION_RENEW_ATTEMPTS; attempt++) {
             long partitionID = -1;
             if (vertex instanceof InternalRelation) {
@@ -165,7 +164,6 @@ public class VertexIDAssigner {
     }
 
     public void assignIDs(Iterable<InternalRelation> addedRelations) {
-        log.info("assigning id to a set of relations");
         if (!placementStrategy.supportsBulkPlacement()) {
             for (InternalRelation relation : addedRelations) {
                 for (int i = 0; i < relation.getArity(); i++) {
@@ -280,7 +278,6 @@ public class VertexIDAssigner {
                 } else {
                     id = idManager.getVertexID(pool.vertex.nextID(), partitionID);
                 }
-                log.info("assigning id " + id + " from partition " + partitionIDl + " to vertex");
                 pool.accessed();
             } catch (IDPoolExhaustedException e) {
                 log.debug("Pool exhausted for partition id {}", partitionID);
