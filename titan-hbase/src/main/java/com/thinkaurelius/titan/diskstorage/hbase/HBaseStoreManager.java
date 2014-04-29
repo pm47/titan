@@ -178,7 +178,7 @@ public class HBaseStoreManager extends DistributedStoreManager implements KeyCol
         features.supportsMultiQuery = true;
         features.supportsConsistentKeyOperations = true;
         features.supportsLocking = false;
-        features.isKeyOrdered = false;
+        features.isKeyOrdered = true;
         features.isDistributed = true;
         features.hasLocalKeyPartition = false;
 
