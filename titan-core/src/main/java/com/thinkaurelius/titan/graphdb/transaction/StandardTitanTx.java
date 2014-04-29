@@ -640,7 +640,11 @@ public class StandardTitanTx extends TitanBlueprintsTransaction {
     public TitanKey getPropertyKey(String name) {
         TitanType et = getType(name);
         if (et == null) {
-            return config.getAutoEdgeTypeMaker().makeKey(makeKey(name));
+            try {
+                return config.getAutoEdgeTypeMaker().makeKey(makeKey(name));
+            } catch(IllegalArgumentException e) {
+                throw new IllegalArgumentException("Could not get key: " + name, e);
+            }
         } else if (et.isPropertyKey()) {
             return (TitanKey) et;
         } else
